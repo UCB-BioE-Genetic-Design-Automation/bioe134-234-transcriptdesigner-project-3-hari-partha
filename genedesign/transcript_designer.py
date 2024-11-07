@@ -17,38 +17,39 @@ class TranscriptDesigner:
 
     def __init__(self):
 
-        self.codon_usage = {}
+        self.aminoAcidToCodon = {}
         self.rbsChooser = None
 
         self.codonChecker = None
         self.forbiddenSequenceChecker = None
-        self.promoterChecker = None
-        self.internalRBSChecker = None  # Internal RBS checker instead of RNaseE
+        self.internalPromoterChecker = None
+        self.InternalRBSChecker = None
     
     
     def initiate(self):
         """
-        Initialization method for RBSChooser and checkers.
+        Initialization method for RBSChooser
         """
+
         self.rbsChooser = RBSChooser()
         self.rbsChooser.initiate()
 
-        self.forbiddenSequenceChecker = ForbiddenSequenceChecker()
+        self.forbiddenChecker = ForbiddenSequenceChecker()
         self.promoterChecker = PromoterChecker()
         self.codonChecker = CodonChecker()
-        self.internalRBSChecker = InternalRBSChecker()  # Use InternalRBSChecker 
+        self.InternalRBSChecker = InternalRBSChecker() 
         
         # Initialize checkers
-        self.forbiddenSequenceChecker.initiate()
+        self.forbiddenChecker.initiate()
         self.promoterChecker.initiate()
         self.codonChecker.initiate()
-        self.internalRBSChecker.initiate()
+        self.InternalRBSChecker.initiate()
 
         # Load codon usage data from the provided text file
-        self.codon_usage = self.load_codon_usage('/Users/haripartha/Documents/bioe134-234-transcriptdesigner-project-3-hari-partha/genedesign/data/codon_usage.txt')
+        self.aminoAcidToCodon = self.parse_codon_usage('genedesign/data/codon_usage.txt')
 
     
-    def load_codon_usage(self, filepath: str) -> dict:
+    def parse_codon_usage(self, filepath: str) -> dict:
         """
         Parses a codon usage file and returns a dictionary mapping amino acids to their codons and frequencies.
         
@@ -58,7 +59,7 @@ class TranscriptDesigner:
         Returns:
             dict: A dictionary where keys are amino acids and values are lists of tuples (codon, frequency).
         """
-        codon_usage = {}
+        amino_acid_to_codon = {}
 
         with open(filepath, 'r') as f:
             for line in f:
@@ -69,13 +70,13 @@ class TranscriptDesigner:
                     aa = parts[1].strip()     # Amino acid (e.g., F)
                     frequency = float(parts[2])  # Frequency (e.g., 0.58)
 
-                    # Add codon and frequency to the corresponding amino acid entry
-                    if aa not in codon_usage:
-                        codon_usage[aa] = []
-                    codon_usage[aa].append((codon, frequency))
+                # Add codon and frequency to the corresponding amino acid entry
+                    if aa not in amino_acid_to_codon:
+                        amino_acid_to_codon[aa] = []
+                    amino_acid_to_codon[aa].append((codon, frequency))
         
-        return codon_usage
-
+        return amino_acid_to_codon
+     
     
     def guided_random_codon(self, aa: str) -> str:
         """
@@ -87,7 +88,8 @@ class TranscriptDesigner:
         Returns:
             str: Selected codon
         """
-        codons = self.codon_usage.get(aa)
+        # Get list of (codon, frequency) tuples for this amino acid
+        codons = self.aminoAcidToCodon.get(aa)
         
         if not codons:
             raise ValueError(f"No codons available for amino acid {aa}")
@@ -105,10 +107,10 @@ class TranscriptDesigner:
         return codons[-1][0]  # Fallback to last option
    
     
-    def score_candidates(self, candidates):
+    def candidate_scorer(self, candidates):
         """
         Scores candidate solutions based on various criteria like forbidden sequences,
-        secondary structure formation, internal RBS sites, etc.
+        secondary structure formation, RNase E cleavage sites, etc.
         
         Parameters:
             candidates (List[List[str]]): List of candidate solutions (codons).
@@ -124,28 +126,36 @@ class TranscriptDesigner:
             "forbidden": 6,
             "hairpin": 4,
             "promoter": 1,
-            "internal_rbs": 1,
+            "internal_rbs": 2,
             "codon_usage": 4
         }
 
         for candidate in candidates:
+            # Convert list of codons to DNA sequence string
             dna_seq = ''.join(candidate)
+
+            # Initialize score for this candidate
             score = 0
 
             # Run all checkers on the candidate DNA sequence and accumulate scores
-            if self.forbiddenSequenceChecker.run(dna_seq):
+            forbidden_okay = self.forbiddenChecker.run(dna_seq)
+            if forbidden_okay:
                 score += weights["forbidden"]
 
-            if hairpin_checker(dna_seq):
+            hairpin_okay = hairpin_checker(dna_seq)
+            if hairpin_okay:
                 score += weights["hairpin"]
 
-            if self.promoterChecker.run(dna_seq):
+            promoter_okay = self.promoterChecker.run(dna_seq)
+            if promoter_okay:
                 score += weights["promoter"]
 
-            if self.internalRBSChecker.run(dna_seq):
+            internal_okay = self.InternalRBSChecker.run(dna_seq)
+            if internal_okay:
                 score += weights["internal_rbs"]
 
-            if self.codonChecker.run(candidate):
+            codon_okay = self.codonChecker.run(candidate)
+            if codon_okay:
                 score += weights["codon_usage"]
 
             # Append the candidate and its score to the list
@@ -175,19 +185,24 @@ class TranscriptDesigner:
 
         # Run all checkers on the candidate DNA sequence
         
-        if not self.forbiddenSequenceChecker.run(dna_seq):
+        forbidden_okay = self.forbiddenChecker.run(dna_seq)
+        if not forbidden_okay:
             return False
 
-        if not hairpin_checker(dna_seq):
+        hairpin_okay = hairpin_checker(dna_seq)
+        if not hairpin_okay:
             return False
 
-        if not self.promoterChecker.run(dna_seq):
+        promoter_okay = self.promoterChecker.run(dna_seq)
+        if not promoter_okay:
             return False
 
-        if not self.internalRBSChecker.run(dna_seq):
+        internal_okay = self.InternalRBSChecker.run(dna_seq)
+        if not internal_okay:
             return False
 
-        if not self.codonChecker.run(candidate):
+        codon_okay = self.codonChecker.run(candidate)
+        if not codon_okay:
             return False
 
         # If all checks pass
@@ -205,18 +220,23 @@ class TranscriptDesigner:
             str: Optimized DNA coding sequence including dynamically growing preamble.
         """
         
+        # Initialize an empty preamble 
         preamble = []
-        cds = []
+
+        cds = []  # Start with an empty coding sequence
+        
+        # Sliding window size (3 amino acids / 9 nucleotides)
         window_size = 3
 
         for i in range(0, len(peptide), window_size):
+            # Get current window of amino acids and next 6 downstream ones if available
             window_peptide = peptide[i:i + window_size]
             downstream_peptide = peptide[i + window_size:i + window_size + 6]
 
             # Generate multiple possible solutions using guided random selection
             candidate_codons = [
                 [self.guided_random_codon(aa) for aa in window_peptide]
-                for _ in range(10)
+                for _ in range(10)  # Generate 10 candidates per window
             ]
 
             # Validate each candidate until we find one that passes all checks
@@ -228,13 +248,13 @@ class TranscriptDesigner:
             
             # If no valid candidates are found after validation retries, get candidate with highest score
             if best_candidate is None:
-                best_candidate = self.score_candidates(candidate_codons)
+                best_candidate = self.candidate_scorer(candidate_codons)  # Fallback option
 
             # Retain only middle part of this candidate (for overlap), or all if it's at the end of the sequence
             if len(window_peptide) == window_size:
                 cds.extend(best_candidate[:window_size])
             else:
-                cds.extend(best_candidate[:len(window_peptide)])
+                cds.extend(best_candidate[:len(window_peptide)])  # Handle end of sequence
 
             # Update preamble with newly optimized middle part of this candidate 
             preamble += best_candidate[:window_size]
@@ -272,7 +292,7 @@ if __name__ == "__main__":
     designer = TranscriptDesigner()
     designer.initiate()
 
-    ignores = set()
+    ignores = set()  # Example: No RBS options to ignore in this case.
     transcript = designer.run(peptide, ignores)
 
     print(transcript)
